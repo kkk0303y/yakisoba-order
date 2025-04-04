@@ -34,6 +34,26 @@
         <input type="number" id="toppingCount" value="0" min="0">
       </label>
     <label>備考(任意)<textarea id="note"></textarea></label>
+    <p id="pricePreview" class="note">合計金額：0円</p>
+    <script>
+        // 合計金額のプレビュー表示
+        const yakisobaInput = document.getElementById('yakisobaCount');
+        const toppingInput = document.getElementById('toppingCount');
+        const pricePreview = document.getElementById('pricePreview');
+      
+        function updatePricePreview() {
+          const yakisoba = parseInt(yakisobaInput.value) || 0;
+          const topping = parseInt(toppingInput.value) || 0;
+          const total = yakisoba * 500 + topping * 100;
+          pricePreview.textContent = `合計金額：${total}円`;
+        }
+      
+        yakisobaInput.addEventListener('input', updatePricePreview);
+        toppingInput.addEventListener('input', updatePricePreview);
+      
+        // 初期表示
+        updatePricePreview();
+    </script>
     <button onclick="submitOrder()">注文を確定する</button>
     <div id="orderResult" class="note"></div>
   </div>
