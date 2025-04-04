@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理者画面 - 焼きそば注文</title>
+  <style>
+    body { font-family: sans-serif; padding: 2em; max-width: 900px; margin: auto; }
+    h2 { margin-top: 2em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
+    button { padding: 0.3em 0.6em; margin: 0.2em; }
+    .summary { margin-top: 1em; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>管理者画面</h1>
+
+  <h2>注文リスト（未提供）</h2>
+  <div class="summary" id="pendingSummary"></div>
+  <table id="pendingTable">
+    <thead>
+      <tr><th>番号</th><th>名前</th><th>焼きそば</th><th>目玉焼き</th><th>備考</th><th>金額</th><th>操作</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>提供済みリスト</h2>
+  <div class="summary" id="servedSummary"></div>
+  <table id="servedTable">
+    <thead>
+      <tr><th>番号</th><th>名前</th><th>焼きそば</th><th>目玉焼き</th><th>備考</th><th>金額</th><th>操作</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDB6Ta_ErjX-ymcFKEXB9T1Kp-IjTveKac",
+      authDomain: "yakisoba-9aa2d.firebaseapp.com",
+      databaseURL: "https://yakisoba-9aa2d-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "yakisoba-9aa2d",
+      storageBucket: "yakisoba-9aa2d.appspot.com",
+      messagingSenderId: "517178729861",
+      appId: "1:517178729861:web:890c28bc3d54b9a6c810ec"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const pendingTable = document.querySelector('#pendingTable tbody');
+    const servedTable = document.querySelector('#servedTable tbody');
+    const pendingSummary = document.getElementById('pendingSummary');
+    const servedSummary = document.getElementById('servedSummary');
+
+    function renderOrders(snapshot) {
+      const data = snapshot.val() || {};
+      const orders = Object.values(data);
+      const pending = orders.filter(o => o.status === 'pending').sort((a,b) => a.timestamp - b.timestamp);
+      const served = orders.filter(o => o.status === 'served').sort((a,b) => a.timestamp - b.timestamp);
+
+      // リセット
+      pendingTable.innerHTML = '';
+      servedTable.innerHTML = '';
+
+      let pendingYakisoba = 0, pendingTopping = 0;
+      let servedYakisoba = 0, servedTopping = 0, servedTotal = 0;
+
+      for (const order of pending) {
+        pendingYakisoba += order.yakisobaCount;
+        pendingTopping += order.toppingCount;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${order.orderNumber}</td>
+          <td>${order.name}</td>
+          <td>${order.yakisobaCount}</td>
+          <td>${order.toppingCount}</td>
+          <td>${order.note || ''}</td>
+          <td>${order.total}円</td>
+          <td>
+            <button onclick="markServed(${order.orderNumber})">提供済みに</button>
+            <button onclick="editOrder(${order.orderNumber})">編集</button>
+            <button onclick="deleteOrder(${order.orderNumber})">削除</button>
+          </td>`;
+        pendingTable.appendChild(tr);
+      }
+
+      for (const order of served) {
+        servedYakisoba += order.yakisobaCount;
+        servedTopping += order.toppingCount;
+        servedTotal += order.total;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${order.orderNumber}</td>
+          <td>${order.name}</td>
+          <td>${order.yakisobaCount}</td>
+          <td>${order.toppingCount}</td>
+          <td>${order.note || ''}</td>
+          <td>${order.total}円</td>
+          <td>
+            <button onclick="returnToPending(${order.orderNumber})">戻す</button>
+          </td>`;
+        servedTable.appendChild(tr);
+      }
+
+      pendingSummary.innerText = `提供予定：焼きそば ${pendingYakisoba}個、目玉焼き ${pendingTopping}個`;
+      servedSummary.innerText = `提供済み：焼きそば ${servedYakisoba}個、目玉焼き ${servedTopping}個、売上合計 ${servedTotal}円`;
+    }
+
+    function markServed(orderNumber) {
+      db.ref(`orders/${orderNumber}/status`).set('served');
+    }
+
+    function returnToPending(orderNumber) {
+      // timestamp を一番古い値 - 1 にして先頭へ戻す
+      db.ref('orders').once('value').then(snap => {
+        const orders = Object.values(snap.val() || {});
+        const timestamps = orders.filter(o => o.status === 'pending').map(o => o.timestamp);
+        const oldest = timestamps.length > 0 ? Math.min(...timestamps) : Date.now();
+        db.ref(`orders/${orderNumber}`).update({
+          status: 'pending',
+          timestamp: oldest - 1
+        });
+      });
+    }
+
+    function deleteOrder(orderNumber) {
+      if (confirm('本当に削除しますか？')) {
+        db.ref(`orders/${orderNumber}`).remove();
+      }
+    }
+
+    function editOrder(orderNumber) {
+      const path = `orders/${orderNumber}`;
+      db.ref(path).once('value').then(snap => {
+        const o = snap.val();
+        const name = prompt('名前', o.name);
+        const y = prompt('焼きそばの個数', o.yakisobaCount);
+        const t = prompt('目玉焼きの個数', o.toppingCount);
+        const note = prompt('備考', o.note);
+        const yakisoba = parseInt(y);
+        const topping = parseInt(t);
+        if (!name || isNaN(yakisoba) || isNaN(topping)) return;
+        const total = yakisoba * 500 + topping * 100;
+        db.ref(path).update({ name, yakisobaCount: yakisoba, toppingCount: topping, note, total });
+      });
+    }
+
+    db.ref('orders').on('value', renderOrders);
+  </script>
+</body>
+</html>
